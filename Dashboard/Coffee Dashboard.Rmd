@@ -1,0 +1,206 @@
+---
+title: "Coffee Dashboard"
+output: 
+  flexdashboard::flex_dashboard:
+    theme:
+      bg: "#ffffff"
+      fg: "#171182" 
+      primary: "#171182"
+      base_font:
+        google: Prompt
+      code_font:
+        google: JetBrains Mono
+    orientation: columns
+    vertical_layout: fill
+    logo: Coffee_resized.png
+    
+   
+---
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+library(tidyverse)
+library(htmlwidgets)
+library(reshape2)
+library(crosstalk)
+library(plotly)
+library(kableExtra)
+library(htmltools)
+library(formattable)
+library(ggpubr)
+library(lme4)
+
+# generate some random data
+set.seed(100)
+Data = data.frame("Student" = rep(c("Student 1", "Student 2", "Student 3", "Student 4", "Student 5"), each = 31),
+                 "Day" = rep(1:31, 5),
+                 "Coffee" = c(sample(0:1, 31, prob = c(0.25, 0.75),T), sample(2:5, 31, T), sample(2:3, 31, prob = c(0.8, 0.2),T),
+                              sample(3:4, 31,T), sample(1:3, 31, prob = c(0.5,0.25,0.25),T)),
+                 "Words" = c(sample(200:800, 31, T), sample(200:400, 31, T), sample(60:1000, 31, T), 
+                             sample(20:350, 31, T), sample(200:250, 31, T)))
+
+
+# make it a shared data object
+
+Coffee = SharedData$new(Data)
+
+
+```
+
+# Background
+
+## Column
+**About the Project**
+<br>
+<br>
+This project is completely made up and looks to examine whether coffee consumed has any bearing on words written per day in PhD students. <br>
+Hopefully by the end of this you get an idea of what flexdashboards can do and whether you need more coffee.
+<br>
+Here is a picture that is embedded in the document. This guy makes a great coffee
+
+## Column
+
+```{r}
+knitr::include_graphics("Cafe.jpg")
+```
+
+
+
+
+# Data
+
+## Column
+
+Lets have a look at the data visually. To do this we can embed a couple of plots and a filter for our data
+
+```{r}
+
+filter_select(id = "Student",
+    label = "Select a Student",
+    sharedData = Coffee,
+    group = ~`Student`,
+    multiple = T)
+
+```
+
+
+The filter has some downsides compared to Shiny. When you open the html file everything is displayed and there is no option for a default. The All function doesn't function either so you can make select multiple available. <br>
+
+Other options if you don't love this is to just use the interactivity of the plotly object.<br>
+
+On this page we also have a tab structure so you can flick through different plots.
+<br>
+You can also make a filter that is a slider
+
+```{r}
+
+filter_slider(id = "Day",
+              label = "Day of the Month",
+              sharedData = Coffee,
+              column = ~`Day`,
+              step = 1)
+
+```
+
+Note that the slider obliterates the boxplot because it doesn't have an element that depends on "Day"
+
+## Column {.tabset}
+
+### Coffee vs Time
+```{r}
+
+CoffeeTime.Plot = Coffee %>% ggplot(aes(x = Day, y = Coffee, colour = Student, group = Student))+
+                          geom_point()+
+                          geom_line()+
+                          theme_light()+
+                          labs(x = "Day of Month", y = "Coffees Consumed")
+
+ggplotly(CoffeeTime.Plot)
+
+```
+
+### Words vs Time
+```{r}
+
+WordTime.Plot = Coffee %>% ggplot(aes(x = Day, y = Words, colour = Student, group = Student))+
+                          geom_point()+
+                          geom_line()+
+                          theme_light()+
+                          labs(x = "Day of Month", y = "Words Written")
+
+ggplotly(WordTime.Plot)
+
+```
+
+
+### Words
+```{r}
+
+Word.Plot = Coffee %>% ggplot(aes(x = Student, y = Words, fill = Student, group = Student))+
+                          geom_boxplot()+
+                          theme_light()+
+                          labs(x = "Student", y = "Words Written")
+
+ggplotly(Word.Plot)
+
+```
+
+
+
+# Results
+
+## Column
+
+To answer this question we might want to fit a mixed model to our data. <br>
+Using lme4 we fit this model
+
+
+```{r echo = T}
+
+Model = lmer(Words ~ Coffee + (1+Coffee|Student), data = Data)
+```
+
+<br>
+We can output some model information directly into the dashboard
+<br>
+
+```{r echo=T}
+summary(Model)$coefficients
+coefficients(Model)
+
+```
+
+
+## Column
+
+We might also like to make a plot of our model
+
+``` {r, fig.width = 8, fig.height = 6, fig.align = 'center'}
+
+
+# Extract fixed effects
+
+FE = summary(Model)$coefficients
+LinData = data.frame("Coffee" = c(0:5))
+LinData$Wmean = FE[1,1] + LinData$Coffee*FE[2,1]
+LinData$Wup = (FE[1,1]+FE[1,2]) + LinData$Coffee*(FE[2,1]+FE[2,2])
+LinData$Wlo = (FE[1,1]-FE[1,2]) + LinData$Coffee*(FE[2,1]-FE[2,2])
+
+
+# Create the plot
+ggplot(Data, aes(x = Coffee)) +
+ geom_point(data = Data, aes(color = factor(Student), y = Words), alpha = 0.6) + # Scatter plot of data points
+ geom_smooth(data = Data, aes(colour = Student, group = Student, y = Words), method = 'lm')+
+ geom_ribbon(data = LinData, aes(x = Coffee, ymin = Wlo, ymax = Wup), alpha = 0.3, fill = "blue")+
+ geom_line(data = LinData, aes(x = Coffee, y = Wmean), colour = "blue")+
+ labs(title = "Effect of Coffee Consumption on Words Written",
+ x = "Coffee Consumption (cups)",
+ y = "Words Written",
+ color = "Student ID") +
+ theme_light()
+
+coefs = summary(Model)
+
+```
+
+As we can see there is a potential positive benefit for having more coffees when wanting to write more words. If in doubt **have more coffee.**
